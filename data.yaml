@@ -1,0 +1,8 @@
+path: ./data
+train: images
+val: images
+
+nc: 2
+names:
+  0: legend
+  1: landtype

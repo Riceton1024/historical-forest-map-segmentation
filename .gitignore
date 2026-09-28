@@ -1,0 +1,25 @@
+# Byte-compiled / Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# macOS system files
+.DS_Store
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Model weights
+*.pt
+*.pth
+*.onnx
+*.engine
+
+# Generated runtime data & logs
+data/
+results/
+runs/
+wandb/
+logs/

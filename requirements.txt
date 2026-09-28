@@ -1,0 +1,9 @@
+ultralytics==8.4.6
+torch>=2.0.0
+opencv-python
+shapely
+scipy
+pycocotools
+matplotlib
+scikit-image
+pillow
