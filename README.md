@@ -1,5 +1,6 @@
 # Historical Forest Map Instance Segmentation
 
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 [![YOLOv11](https://img.shields.io/badge/YOLO-v11-green.svg)](https://docs.ultralytics.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -63,6 +64,27 @@ You can select the strategy via the `--strategy` flag in `train.py`:
 
 ---
 
+## 📂 Repository Structure
+
+```text
+historical-forest-map-segmentation/
+├── demo_data/                    # Sample historical map sheets & Standard YOLO format anotations
+│   ├── images/                   
+│   ├── labels/                   
+│   └── unlabeled_images/         
+├── src/                          
+│   ├── dataset.py                # Map tiling and polygon coordinate adjustment engine
+│   ├── pseudo_label.py           # Dual-strategy pseudo-label generators 
+│   └── metrics.py                # Segmentation metrics computation and evaluation tools
+├── data.yaml                     
+├── train.py                      
+├── evaluate.py                   
+├── requirements.txt             
+└── README.md                     
+```
+
+---
+
 ## 🚀 Quick Start
 
 ### 1. Installation
@@ -116,26 +138,6 @@ python evaluate.py \
   --output-txt results/eval_report.txt
 ```
 
----
-
-## 📂 Repository Structure
-
-```text
-historical-forest-map-segmentation/
-├── demo_data/                    # Sample historical map sheets & YOLO polygon labels
-│   ├── images/                   
-│   ├── labels/                   
-│   └── unlabeled_images/         
-├── src/                          
-│   ├── dataset.py                # Map tiling & coordinate normalization engine
-│   ├── pseudo_label.py           # Dual-strategy pseudo-label generators 
-│   └── metrics.py                
-├── data.yaml                     
-├── train.py                      # Self-training execution pipeline
-├── evaluate.py                   # Whole-map reconstruction & reporter
-├── requirements.txt             
-└── README.md                     
-```
 ---
 
 ## 🤝 Acknowledgments
