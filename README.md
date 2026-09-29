@@ -1,98 +1,152 @@
-# Historical Forest Map Instance Segmentation via Dual Semi-Supervised Pseudo-Labeling
+# Historical Forest Map Instance Segmentation
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![PyTorch 2.0+](https://img.shields.io/badge/PyTorch-2.0+-red.svg)](https://pytorch.org/)
 [![YOLOv11](https://img.shields.io/badge/YOLO-v11-green.svg)](https://docs.ultralytics.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Official repository for the paper: **"Enhancing instance segmentation on limited-annotated historical maps via pseudo-labeling"** (Submitted to *Ecological Informatics*).
+Official PyTorch implementation of **"Enhancing instance segmentation on limited-annotated historical maps via pseudo-labeling"**.
 
 ---
 
-## 📌 Overview
+## 🎯 Task & Dataset Example
 
-Automatic extraction of historical forest boundaries from scanned map archives is often hindered by cartographic variability and severe label scarcity. This repository provides a unified PyTorch/Ultralytics implementation for semi-supervised instance segmentation using **YOLOv11-seg** augmented with two complementary pseudo-labeling filtering mechanisms:
+Historical map archives typically lack standardized legends and consistent cartographic styles, making automated digitization particularly challenging. To address this issue, our framework treats each target region across the entire map sheet as an individual instance for end-to-end model training. The following shows a sample map sheet along with its corresponding instance-level ground truth target:
 
-- **Baseline (`none`):** Fully supervised training using only manual annotations.
-- **Strategy-O (`object`):** Inclusive Object-Level Filtering that prioritizes informational diversity to bridge the annotation gap under extreme label scarcity ($N=5$).
-- **Strategy-P (`patch`):** Restrictive Patch-Level Filtering that emphasizes high boundary purity as manual supervision scales ($N=10, 20, 40$).
+<p align="center">
+  <img src="demo_data/images/Hardisleben_1938.jpg" width="48%" title="Original Historical Map Sheet"/>
+  <img src="demo_data/Hardisleben_1938_mask.png" width="48%" title="Target Ground Truth Instance Mask"/>
+</p>
+<p align="center">
+  <em>Original scanned historical map (Left) vs. Target ground truth instance mask (Right) (Hardisleben_1938)</em>
+</p>
 
 ---
 
-## 🛠️ Installation & Setup
+## 🎛️ Pseudo-Labeling Strategies
 
-### 1. Environment Setup
+To train models, this framework leverages pseudo-labeling on unlabeled historical map sheets. When provided with a dataset containing both annotated and unlabeled map sheets, pseudo-labels are generated and filtered using two confidence mechanisms:
 
-Clone this repository and set up a Virtual Environment:
+- **Object-level (Strategy-O):** An image tile (patch) is accepted into training if it contains **at least one** predicted object exceeding the confidence threshold.
+- **Patch-level (Strategy-P):** An image tile (patch) is accepted into training **only if all** predicted objects exceed the confidence threshold.
 
-git clone [https://github.com/Riceton1024/historical-forest-map-segmentation.git](https://github.com/Riceton1024/historical-forest-map-segmentation.git)
+You can select the strategy via the `--strategy` flag in `train.py`:
+
+<table>
+  <thead>
+    <tr>
+      <th width="22%">Strategy Flag</th>
+      <th width="18%">Strategy Name</th>
+      <th width="22%">Unlabeled Data Used?</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>--strategy none</code></td>
+      <td>Baseline</td>
+      <td>❌ No</td>
+      <td>Fully-supervised training on manual annotations.</td>
+    </tr>
+    <tr>
+      <td><code>--strategy object</code></td>
+      <td>Strategy-O</td>
+      <td>✅ Yes</td>
+      <td>Retains patches with any high-confidence instance candidates.</td>
+    </tr>
+    <tr>
+      <td><code>--strategy patch</code></td>
+      <td>Strategy-P</td>
+      <td>✅ Yes</td>
+      <td>Retains patches only when all instance candidates pass the threshold.</td>
+    </tr>
+  </tbody>
+</table>
+
+---
+
+## 🚀 Quick Start
+
+### 1. Installation
+Clone the repository and set up the Python environment:
+```bash
+git clone https://github.com/Riceton1024/historical-forest-map-segmentation.git
 cd historical-forest-map-segmentation
 
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+```
+### 2. Preprocess & Tile Map Archives
+Crop high-resolution historical map sheets into $896 \times 896$ tiles for training:
+```bash
+python src/dataset.py --images-dir demo_data/images --labels-dir demo_data/labels --output-dir data
+```
+### 3. Model Training
+Semi-supervised training follows a two-stage Teacher-Student pipeline:
+
+#### Step 3a: Train Baseline Teacher Model
+Train a baseline teacher model using manual annotations only (--strategy none):
+```bash
+python train.py \
+  --strategy none \
+  --name exp_teacher \
+  --epochs 100 \
+  --batch-size 8
+```
+
+#### Step 3b: Train Student Model with Pseudo-Labeling
+Generate pseudo-labels from unlabeled map sheets using trained teacher weights with either Strategy-O (--strategy object) or Strategy-P (--strategy patch), then train the student model:
+```bash
+python train.py \
+  --strategy object \
+  --teacher-weights results/exp_teacher/weights/best.pt \
+  --unlabeled-dir demo_data/unlabeled_images \
+  --conf-thresh 0.25 \
+  --name exp_student \
+  --epochs 100 \
+  --batch-size 8
+```
+
+### 4. Evaluate & Stitch Whole Maps
+Run tile-based inference, reconstruct full-map spatial segmentation, and generate evaluation reports:
+```bash
+python evaluate.py \
+  --model results/exp_student/weights/best.pt \
+  --images-dir demo_data/images \
+  --labels-dir demo_data/labels \
+  --output-txt results/eval_report.txt
+```
 
 ---
 
 ## 📂 Repository Structure
 
+```text
 historical-forest-map-segmentation/
-├── demo_data/                # Sample dataset for quick pipeline verification
-│   ├── images/               # Full test map images
-│   └── labels/               # Corresponding YOLO polygon annotations
-├── src/                      # Core modules
-│   ├── dataset.py            # Map tiling and label adjustment pipeline
-│   ├── pseudo_label.py       # Dual-strategy pseudo-label generators
-│   └── metrics.py            # Hungarian matching, AW-IoU, and mAP evaluation
-├── data.yaml                 # YOLO dataset configuration
-├── train.py                  # Self-training execution script
-├── evaluate.py               # Whole-map reconstruction & evaluation runner
-├── requirements.txt          # Dependencies
-└── README.md                 # Project documentation
-
+├── demo_data/                    # Sample historical map sheets & YOLO polygon labels
+│   ├── images/                   
+│   ├── labels/                   
+│   └── unlabeled_images/         
+├── src/                          
+│   ├── dataset.py                # Map tiling & coordinate normalization engine
+│   ├── pseudo_label.py           # Dual-strategy pseudo-label generators 
+│   └── metrics.py                
+├── data.yaml                     
+├── train.py                      # Self-training execution pipeline
+├── evaluate.py                   # Whole-map reconstruction & reporter
+├── requirements.txt             
+└── README.md                     
+```
 ---
 
-## 🚀 Execution Guide
+## 🤝 Acknowledgments
 
-### 1. Preprocess & Tile Dataset
-Tile high-resolution map archives into sub-images for training:
+This research was supported by the **iDiv Flexpool**. We thank the **Forest Research and Competence Center Gotha (FFK Gotha)** for providing the historical maps, the **Thuringian University and State Library Jena (ThULB Jena)** for digitization, and our student assistants for dataset annotation.
 
-python src/dataset.py --images-dir demo_data/images --labels-dir demo_data/labels --output-dir data
-
-### 2. Model Training with Strategy Selection
-Use `--strategy` to choose between baseline supervised training or pseudo-labeling strategies (`none`, `object`, or `patch`):
-
-# Option A: Baseline Supervised Training (No Pseudo-Labels)
-python train.py --strategy none --epochs 100 --batch-size 8
-
-# Option B: Strategy-O (Inclusive Object-Level Pseudo-Labeling)
-python train.py --strategy object --epochs 100 --batch-size 8
-
-# Option C: Strategy-P (Restrictive Patch-Level Pseudo-Labeling)
-python train.py --strategy patch --epochs 100 --batch-size 8
-
-### 3. Evaluate & Reconstruct Whole Maps
-Perform tile-based inference, whole-map stitching, Hungarian matching, and metrics report generation:
-
-python evaluate.py --model results/exp_ssl/weights/best.pt --images-dir demo_data/images --labels-dir demo_data/labels --output-txt results/eval_report.txt
-
----
-
-## 📊 Citation & Acknowledgment
-
-If you find this codebase or methodology useful in your research, please consider citing:
-
-@article{wu2026enhancing,
-  title={Enhancing instance segmentation on limited-annotated historical maps via pseudo-labeling},
-  author={Wu, Chen-Huan and M{\"a}der, Patrick and Bernhardt-R{\"o}mermann, Markus},
-  journal={Ecological Informatics},
-  year={2026}
-}
-
-This research was supported by funding from the **German Centre for Integrative Biodiversity Research (iDiv) Halle-Jena-Leipzig** (Flexpool).
+> **Note:** Paper citation details will be updated upon official publication.
 
 ---
 
 ## 📜 License
 
-This project is released under the [MIT License](LICENSE).
+This project is licensed under the [MIT License](LICENSE).
+
