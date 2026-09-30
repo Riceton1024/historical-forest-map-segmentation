@@ -1,6 +1,7 @@
 """
 Main Evaluation Script
-Loads trained models, performs whole-map reconstruction, and saves metric reports.
+Loads trained models, performs whole-map reconstruction, generates full-map 
+instance polygon labels (_mask.txt), and renders instance masks (_mask.png).
 """
 
 import argparse
@@ -10,6 +11,7 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 from src.metrics import calculate_iou, evaluate_instance_segmentation
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Evaluate Instance Segmentation on Historical Maps")
@@ -22,6 +24,7 @@ def parse_args():
     parser.add_argument("--conf", type=float, default=0.25, help="Confidence threshold")
     parser.add_argument("--iou", type=float, default=0.7, help="NMS IoU threshold")
     return parser.parse_args()
+
 
 def process_true_mask(true_mask_path, ori_height, ori_width):
     """
@@ -46,7 +49,12 @@ def process_true_mask(true_mask_path, ori_height, ori_width):
 
     return true_mask
 
+
 def get_combined_mask(base_name, slice_image_path, model, conf, iou, slice_size=896, img_size=896, ori_height=0, ori_width=0):
+    """
+    Runs inference on image tiles and stitches predicted masks back into full map dimensions.
+    Restored to original calculation logic to prevent metric distortion.
+    """
     combined_mask_total = np.zeros((ori_height, ori_width), dtype=np.uint8)
     current_individual_masks = []
 
@@ -79,8 +87,8 @@ def get_combined_mask(base_name, slice_image_path, model, conf, iou, slice_size=
         combined_mask_resized = cv2.resize(combined_mask, (slice_size, slice_size), interpolation=cv2.INTER_NEAREST)
         match = re.search(rf"{base_name}_(\d+)_(\d+)\.jpg", img)
         if match:
-            row_index, col_index = int(match.group(1)), int(match.group(2))
-            start_y, start_x = col_index * slice_size, row_index * slice_size
+            col_index, row_index = int(match.group(1)), int(match.group(2))
+            start_x, start_y = col_index * slice_size, row_index * slice_size
             h, w = min(slice_size, ori_height - start_y), min(slice_size, ori_width - start_x)
 
             if h > 0 and w > 0:
@@ -89,7 +97,11 @@ def get_combined_mask(base_name, slice_image_path, model, conf, iou, slice_size=
 
     return combined_mask_total, current_individual_masks
 
+
 def predict_and_reconstruct_single_image(base_name, model, images_dir, labels_dir, tiles_images_dir, conf=0.25, iou=0.7):
+    """
+    Coordinates prediction, tiling assembly, and GT loading for a single full map.
+    """
     ori_image_path = os.path.join(images_dir, f"{base_name}.jpg")
     ori_image = cv2.imread(ori_image_path)
     if ori_image is None:
@@ -122,8 +134,71 @@ def predict_and_reconstruct_single_image(base_name, model, images_dir, labels_di
         'original_image': ori_image,
         'true_mask': true_mask,
         'individual_masks': current_individual_masks,
+        'combined_mask_total': combined_mask_total,
         'IoU': iou_score,
     }
+
+
+def save_full_map_labels_and_render_mask(base_name, individual_masks, ori_height, ori_width, txt_save_path, png_save_path, slice_size=896):
+    """
+    Post-processing export: Converted to full-map coordinates for export (_mask.txt & _mask.png)
+    without touching internal metric data.
+    """
+    txt_lines = []
+    black_canvas = np.zeros((ori_height, ori_width, 3), dtype=np.uint8)
+
+    np.random.seed(42)
+
+    for item in individual_masks:
+        single_mask = item['mask']
+        cls_id = int(item['class_id'])
+        img_path = item['image_name']
+
+        # Parse offset coordinates
+        match = re.search(rf"{base_name}_(\d+)_(\d+)\.jpg", img_path)
+        if not match:
+            continue
+
+        col_index, row_index = int(match.group(1)), int(match.group(2))
+        start_x, start_y = col_index * slice_size, row_index * slice_size
+
+        instance_color = np.random.randint(50, 256, size=3).tolist()
+
+        # Find contours inside tile mask
+        contours, _ = cv2.findContours(single_mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        for cnt in contours:
+            if len(cnt) < 3:
+                continue
+
+            # Offset contour points to full map coordinates
+            cnt_full = cnt.copy()
+            cnt_full[:, 0, 0] += start_x
+            cnt_full[:, 0, 1] += start_y
+
+            # Clip to map boundaries
+            cnt_full[:, 0, 0] = np.clip(cnt_full[:, 0, 0], 0, ori_width - 1)
+            cnt_full[:, 0, 1] = np.clip(cnt_full[:, 0, 1], 0, ori_height - 1)
+
+            # Draw filled colored polygon on black canvas
+            cv2.fillPoly(black_canvas, [cnt_full], instance_color)
+
+            # Convert to normalized coordinates [0.0, 1.0]
+            flattened_coords = []
+            for pt in cnt_full:
+                x_norm = max(0.0, min(1.0, pt[0][0] / float(ori_width)))
+                y_norm = max(0.0, min(1.0, pt[0][1] / float(ori_height)))
+                flattened_coords.extend([f"{x_norm:.6f}", f"{y_norm:.6f}"])
+
+            if len(flattened_coords) >= 6:
+                line = f"{cls_id} " + " ".join(flattened_coords) + "\n"
+                txt_lines.append(line)
+
+    with open(txt_save_path, 'w', encoding='utf-8') as f:
+        f.writelines(txt_lines)
+
+    cv2.imwrite(png_save_path, black_canvas)
+
 
 def main():
     args = parse_args()
@@ -154,6 +229,9 @@ def main():
     model = YOLO(args.model)
     results_list = []
 
+    output_pred_dir = "results/predictions"
+    os.makedirs(output_pred_dir, exist_ok=True)
+
     for test_name in test_map_names:
         initial_result = predict_and_reconstruct_single_image(
             test_name, model, args.images_dir, args.labels_dir, args.tiles_images_dir,
@@ -162,10 +240,25 @@ def main():
         if initial_result is None:
             continue
 
+        # Calculate metrics on untouched original structure
         metrics = evaluate_instance_segmentation(initial_result)
         metrics['image_name'] = test_name
         results_list.append(metrics)
 
+        ori_h, ori_w = initial_result['original_image'].shape[:2]
+        txt_save_path = os.path.join(output_pred_dir, f"{test_name}_mask.txt")
+        png_save_path = os.path.join(output_pred_dir, f"{test_name}_mask.png")
+
+        # Independent export step
+        save_full_map_labels_and_render_mask(
+            test_name,
+            initial_result['individual_masks'],
+            ori_h, ori_w,
+            txt_save_path,
+            png_save_path
+        )
+
+    # Save quantitative metrics summary report
     os.makedirs(os.path.dirname(args.output_txt), exist_ok=True)
     with open(args.output_txt, 'w', encoding='utf-8') as f:
         f.write("image_name\tTotal TP\tTotal FP\tTotal FN\tPrecision\tRecall\tF1-Score\tArea Weighted Mean IoU (TP)\tmAP@50\tmAP\toverall_iou\n")
@@ -186,6 +279,8 @@ def main():
             f.write(line)
 
     print(f"✅ Evaluation report saved to {args.output_txt}")
+    print(f"🖼️ Reconstructed predictions saved to {output_pred_dir} (*_mask.txt, *_mask.png)")
+
 
 if __name__ == "__main__":
     main()
