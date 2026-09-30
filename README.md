@@ -129,7 +129,7 @@ python train.py \
 ```
 
 ### 4. Evaluate & Stitch Whole Maps
-Run tile-based inference, reconstruct full-map spatial segmentation, and generate evaluation reports:
+Run tile-based inference, reconstruct full-map spatial segmentation, generate color-coded instance masks and polygon coordinates, and save evaluation reports:
 ```bash
 python evaluate.py \
   --model results/exp_student/weights/best.pt \
