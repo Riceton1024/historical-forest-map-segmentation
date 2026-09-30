@@ -10,14 +10,14 @@ Official PyTorch implementation of **"Enhancing instance segmentation on limited
 
 ## 🎯 Task & Dataset Example
 
-Historical map archives typically lack standardized legends and consistent cartographic styles, making automated digitization particularly challenging. To address this issue, our framework treats each target region across the entire map sheet as an individual instance for end-to-end model training. The following shows a sample map sheet along with its corresponding instance-level ground truth target:
+Historical map archives lack standardized legends and consistent styles, making automated digitization challenging. Our framework addresses this by treating target regions as individual instances for end-to-end training. We provide sample historical forestry maps from **Hardisleben** (Thuringia, Germany) for demonstration:
 
 <p align="center">
   <img src="demo_data/images/Hardisleben_1938.jpg" width="48%" title="Original Historical Map Sheet"/>
   <img src="demo_data/Hardisleben_1938_mask.png" width="48%" title="Target Ground Truth Instance Mask"/>
 </p>
 <p align="center">
-  <em>Original scanned historical map (Left) vs. Target ground truth instance mask (Right) (Hardisleben_1938)</em>
+  <em>Original scanned historical map (Left) vs. Target ground truth instance mask (Right) (1938)</em>
 </p>
 
 ---
